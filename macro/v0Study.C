@@ -6,8 +6,9 @@
 #include "SimulationDataFormat/MCCompLabel.h"
 #include "SimulationDataFormat/MCTrack.h"
 #include "DataFormatsITS/TrackITS.h"
+#include "ITSBase/GeometryTGeo.h"
 #include "DataFormatsITSMFT/ROFRecord.h"
-
+#include "TSystemDirectory.h"
 #include <TLorentzVector.h>
 #include "TCanvas.h"
 #include "TFile.h"
@@ -32,6 +33,10 @@ const int secondDaughterPDG = -211;
 
 // const int motherPDG = 3122;
 // const int firstDaughterPDG = 2212;
+// const int secondDaughterPDG = -211;
+
+// const int motherPDG = 310;
+// const int firstDaughterPDG = 211;
 // const int secondDaughterPDG = -211;
 
 o2::its::TrackITS *getITSTrack(int motherEvID, int motherTrackID, TTree *ITStree, std::vector<o2::MCCompLabel> *ITSlabel, std::vector<o2::its::TrackITS> *ITStrack);
@@ -65,156 +70,224 @@ void v0Study()
         dauCharges[1] = 1;
     }
 
-    std::vector<TH1D *> hists(4);
+    if (motherPDG == 310)
+    {
+        bins[0] = 0.4;
+        bins[1] = 0.6;
+        dauMass[0] = 0.13957;
+        dauMass[1] = 0.13957;
+        dauCharges[0] = 1;
+        dauCharges[1] = 1;
+    }
+    int injectedParticles = 0;
+
+    std::vector<TH1D *> hists(5);
     hists[0] = new TH1D("recoPDGits", "Reconstructed ITS PDG;;Efficiency", 3, 0, 3);
-    hists[1] = new TH1D("recoPDGitsTPC", "Reconstructed ITS-TPC PDG;;Efficiency", 3, 0, 3);
-    hists[2] = new TH1D("recoPDGtpcTOF", "Reconstructed TPC-TOF PDG;;Efficiency", 3, 0, 3);
-    hists[3] = new TH1D("recoPDGitsTPCTOF", "Reconstructed ITS-TPC-TOF PDG;;Efficiency", 3, 0, 3);
+    hists[1] = new TH1D("recoPDGtpc", "Reconstructed TPC PDG;;Efficiency", 3, 0, 3);
+    hists[2] = new TH1D("recoPDGitsTPC", "Reconstructed ITS-TPC PDG;;Efficiency", 3, 0, 3);
+    hists[3] = new TH1D("recoPDGtpcTOF", "Reconstructed TPC-TOF PDG;;Efficiency", 3, 0, 3);
+    hists[4] = new TH1D("recoPDGitsTPCTOF", "Reconstructed ITS-TPC-TOF PDG;;Efficiency", 3, 0, 3);
     TH1D *histInvMass = new TH1D("V0 invariant mass", "; V0 Mass (GeV/c^{2}); Counts", 30, bins[0], bins[1]);
     TH1D *histV0radius = new TH1D("V0 radius", "; V0 Radius (cm); Counts", 30, 0, 40);
+    TH1D *histDecLength = new TH1D("Dec Length", "; Dec Length (cm); Counts", 30, 0, 50);
+
     TH1D *histITSHits = new TH1D("V0 candidate ITS hits", "ITS hits; Layer Number; #Hits", 7, -0.5, 6.5);
     TH1D *histITScounter = new TH1D("V0 candidate ITS hits and tracks counter", ";; Counts/(# of V0s)", 3, 0, 3);
-
-    auto fMCTracks = TFile::Open("sgn_Kine.root");
-    auto fSecondaries = TFile::Open("o2_secondary_vertex.root");
-    auto fITS = TFile::Open("o2trac_its.root");
-    auto fITSTPC = TFile::Open("o2match_itstpc.root");
-    auto fTPCTOF = TFile::Open("o2match_tof_tpc.root");
-    auto fITSTPCTOF = TFile::Open("o2match_tof_itstpc.root");
-
-    // Trees
-    auto treeMCTracks = (TTree *)fMCTracks->Get("o2sim");
-    auto treeSecondaries = (TTree *)fSecondaries->Get("o2sim");
-    auto treeITS = (TTree *)fITS->Get("o2sim");
-    auto treeITSTPC = (TTree *)fITSTPC->Get("matchTPCITS");
-    auto treeITSTPCTOF = (TTree *)fITSTPCTOF->Get("matchTOF");
-    auto treeTPCTOF = (TTree *)fTPCTOF->Get("matchTOF");
-
-    // Tracks
-    std::vector<o2::MCTrack> *MCtracks = nullptr;
-    std::vector<V0> *v0vec = nullptr;
-    std::vector<o2::its::TrackITS> *ITStracks = nullptr;
-    std::vector<o2::itsmft::ROFRecord> *rofArr = nullptr;
-
-    // Labels
-    std::vector<o2::MCCompLabel> *labITSvec = nullptr;
-    std::vector<o2::MCCompLabel> *labITSTPCvec = nullptr;
-    std::vector<o2::MCCompLabel> *labITSTPCTOFvec = nullptr;
-    std::vector<o2::MCCompLabel> *labTPCTOFvec = nullptr;
-
-    treeSecondaries->SetBranchAddress("V0s", &v0vec);
-    treeMCTracks->SetBranchAddress("MCTrack", &MCtracks);
-    treeITSTPC->SetBranchAddress("MatchMCTruth", &labITSTPCvec);
-    treeTPCTOF->SetBranchAddress("MatchTOFMCTruth", &labTPCTOFvec);
-    treeITSTPCTOF->SetBranchAddress("MatchTOFMCTruth", &labITSTPCTOFvec);
-    treeITS->SetBranchAddress("ITSTrackMCTruth", &labITSvec);
-    treeITS->SetBranchAddress("ITSTrack", &ITStracks);
-    treeITS->SetBranchAddress("ITSTracksROF", &rofArr);
-
-    std::map<std::string, std::vector<o2::MCCompLabel> *> map{{"ITS", labITSvec}, {"ITS-TPC", labITSTPCvec}, {"TPC-TOF", labTPCTOFvec}, {"ITS-TPC-TOF", labITSTPCTOFvec}};
-
-    // fill MC matrix
-    int injectedParticles = 0;
-    std::vector<std::vector<o2::MCTrack>> mcTracksMatrix;
-    auto nev = treeMCTracks->GetEntriesFast();
-
-    mcTracksMatrix.resize(nev);
-    for (int n = 0; n < nev; n++)
-    { // loop over MC events
-        treeMCTracks->GetEvent(n);
-
-        mcTracksMatrix[n].resize(MCtracks->size());
-        for (unsigned int mcI{0}; mcI < MCtracks->size(); ++mcI)
+    std::string path = "/home/fmazzasc/alice/run_pythia_gun/";
+    TSystemDirectory dir("MyDir", path.data());
+    auto files = dir.GetListOfFiles();
+    std::vector<std::string> dirs;
+    std::vector<TString> kine_files;
+    for (auto fileObj : *files)
+    {
+        std::string file = ((TSystemFile *)fileObj)->GetName();
+        if (file.substr(0, 2) == "tf")
         {
-            mcTracksMatrix[n][mcI] = MCtracks->at(mcI);
-            if (MCtracks->at(mcI).GetPdgCode() == motherPDG)
+            dirs.push_back(file);
+            auto innerdir = (TSystemDirectory *)fileObj;
+            auto innerfiles = innerdir->GetListOfFiles();
+            for (auto innerfileObj : *innerfiles)
             {
-                injectedParticles++;
+                TString innerfile = ((TSystemFile *)innerfileObj)->GetName();
+                if (innerfile.EndsWith("Kine.root") && innerfile.Contains("sgn"))
+                {
+                    kine_files.push_back(innerfile);
+                }
             }
         }
     }
-
-    doMatching(mcTracksMatrix, treeITS, labITSvec, hists[0]);
-    doMatching(mcTracksMatrix, treeITSTPC, labITSTPCvec, hists[1]);
-    doMatching(mcTracksMatrix, treeTPCTOF, labTPCTOFvec, hists[2]);
-    doMatching(mcTracksMatrix, treeITSTPCTOF, labITSTPCTOFvec, hists[3]);
-
-    auto outFile = TFile("v0study.root", "recreate");
-
-    treeSecondaries->GetEntry();
-    treeITS->GetEntry();
-    treeITSTPC->GetEntry();
-    treeTPCTOF->GetEntry();
-    treeITSTPCTOF->GetEntry();
-
     int counter = 0;
-    for (auto &v0 : *v0vec)
+    int counterTracks = 0;
+
+    for (unsigned int i = 0; i < dirs.size(); i++)
     {
-        std::vector<int> motherIDvec;
-        std::vector<int> daughterIDvec;
-        std::vector<int> evIDvec;
+        auto &dir = dirs[i];
+        auto &kine_file = kine_files[i];
+        LOG(info) << "Processing " << dir;
 
-        for (int iV0 = 0; iV0 < 2; iV0++)
-        {
-            if (map[v0.getProngID(iV0).getSourceName()])
+        // Files
+        auto fMCTracks = TFile::Open((TString(dir + "/") + kine_file));
+        auto fSecondaries = TFile::Open((dir + "/o2_secondary_vertex.root").data());
+        auto fITSTPC = TFile::Open((dir + "/o2match_itstpc.root").data());
+        auto fTPCTOF = TFile::Open((dir + "/o2match_tof_tpc.root").data());
+        auto fITSTPCTOF = TFile::Open((dir + "/o2match_tof_itstpc.root").data());
+
+        auto fITS = TFile::Open((dir + "/o2trac_its.root").data());
+        auto fTPC = TFile::Open((dir + "/tpctracks.root").data());
+
+        auto fITSclus = TFile::Open((dir + "/o2clus_its.root").data());
+
+        // Trees
+        auto treeMCTracks = (TTree *)fMCTracks->Get("o2sim");
+        auto treeSecondaries = (TTree *)fSecondaries->Get("o2sim");
+        auto treeITS = (TTree *)fITS->Get("o2sim");
+        auto treeTPC = (TTree *)fTPC->Get("tpcrec");
+        auto treeITSTPC = (TTree *)fITSTPC->Get("matchTPCITS");
+        auto treeITSTPCTOF = (TTree *)fITSTPCTOF->Get("matchTOF");
+        auto treeTPCTOF = (TTree *)fTPCTOF->Get("matchTOF");
+
+        // Tracks
+        std::vector<o2::MCTrack> *MCtracks = nullptr;
+        std::vector<V0> *v0vec = nullptr;
+        std::vector<o2::its::TrackITS> *ITStracks = nullptr;
+        std::vector<o2::itsmft::ROFRecord> *rofArr = nullptr;
+
+        // Labels
+        std::vector<o2::MCCompLabel> *labITSvec = nullptr;
+        std::vector<o2::MCCompLabel> *labTPCvec = nullptr;
+        std::vector<o2::MCCompLabel> *labITSTPCvec = nullptr;
+        std::vector<o2::MCCompLabel> *labITSTPCTOFvec = nullptr;
+        std::vector<o2::MCCompLabel> *labTPCTOFvec = nullptr;
+
+        treeSecondaries->SetBranchAddress("V0s", &v0vec);
+        treeMCTracks->SetBranchAddress("MCTrack", &MCtracks);
+        treeITS->SetBranchAddress("ITSTrackMCTruth", &labITSvec);
+        treeTPC->SetBranchAddress("TPCTracksMCTruth", &labTPCvec);
+
+        treeITSTPC->SetBranchAddress("MatchMCTruth", &labITSTPCvec);
+        treeTPCTOF->SetBranchAddress("MatchTOFMCTruth", &labTPCTOFvec);
+        treeITSTPCTOF->SetBranchAddress("MatchTOFMCTruth", &labITSTPCTOFvec);
+        treeITS->SetBranchAddress("ITSTrack", &ITStracks);
+        treeITS->SetBranchAddress("ITSTracksROF", &rofArr);
+
+        std::map<std::string, std::vector<o2::MCCompLabel> *> map{{"ITS", labITSvec}, {"TPC", labTPCvec}, {"ITS-TPC", labITSTPCvec}, {"TPC-TOF", labTPCTOFvec}, {"ITS-TPC-TOF", labITSTPCTOFvec}};
+
+        // fill MC matrix
+        std::vector<std::vector<o2::MCTrack>> mcTracksMatrix;
+        auto nev = treeMCTracks->GetEntriesFast();
+
+        mcTracksMatrix.resize(nev);
+        for (int n = 0; n < nev; n++)
+        { // loop over MC events
+            treeMCTracks->GetEvent(n);
+
+            mcTracksMatrix[n].resize(MCtracks->size());
+            for (unsigned int mcI{0}; mcI < MCtracks->size(); ++mcI)
             {
-
-                auto labTrackType = map[v0.getProngID(iV0).getSourceName()];
-                auto lab = labTrackType->at(v0.getProngID(iV0).getIndex());
-
-                int trackID, evID, srcID;
-                bool fake;
-                lab.get(trackID, evID, srcID, fake);
-                if (!lab.isNoise() && lab.isValid() && lab.isCorrect())
+                mcTracksMatrix[n][mcI] = MCtracks->at(mcI);
+                if (MCtracks->at(mcI).GetPdgCode() == motherPDG)
                 {
-                    auto motherID = mcTracksMatrix[evID][trackID].getMotherTrackId();
-                    motherIDvec.push_back(motherID);
-                    daughterIDvec.push_back(trackID);
-                    evIDvec.push_back(evID);
+                    injectedParticles++;
+                    auto &mcTrack = mcTracksMatrix[n][mcI];
+                    histDecLength->Fill(calcDecLength(MCtracks, mcTrack, firstDaughterPDG));
                 }
             }
         }
 
-        if (motherIDvec.size() < 2)
-            continue;
-        if (motherIDvec[0] != motherIDvec[1] || evIDvec[0] != evIDvec[1])
-            continue;
-        if (motherIDvec[0] <= 0 || motherIDvec[0] > 10000)
-            continue;
+        doMatching(mcTracksMatrix, treeITS, labITSvec, hists[0]);
+        doMatching(mcTracksMatrix, treeTPC, labTPCvec, hists[1]);
+        doMatching(mcTracksMatrix, treeITSTPC, labITSTPCvec, hists[2]);
+        doMatching(mcTracksMatrix, treeTPCTOF, labTPCTOFvec, hists[3]);
+        doMatching(mcTracksMatrix, treeITSTPCTOF, labITSTPCTOFvec, hists[4]);
 
-        int pdg0 = mcTracksMatrix[evIDvec[0]][daughterIDvec[0]].GetPdgCode();
-        int pdg1 = mcTracksMatrix[evIDvec[0]][daughterIDvec[1]].GetPdgCode();
+        treeSecondaries->GetEntry();
+        treeITS->GetEntry();
+        treeTPC->GetEntry();
+        treeITSTPC->GetEntry();
+        treeTPCTOF->GetEntry();
+        treeITSTPCTOF->GetEntry();
+        LOG(info) << v0vec->size();
 
-        histInvMass->Fill(calcMass(v0, dauMass, dauCharges));
-        histV0radius->Fill(TMath::Sqrt(v0.calcR2()));
-
-        if (pdg0 != firstDaughterPDG && pdg0 != secondDaughterPDG)
-            continue;
-        if (pdg1 != firstDaughterPDG && pdg1 != secondDaughterPDG)
-            continue;
-        std::cout << "---------------------------------" << std::endl;
-
-        counter++;
-        std::cout << "Counter: " << counter << std::endl;
-        std::cout << evIDvec[0] << ", " << motherIDvec[0] << ", " << motherIDvec[1] << std::endl;
-        std::cout << "Common mother found, PDG: " << mcTracksMatrix[evIDvec[0]][motherIDvec[0]].GetPdgCode() << std::endl;
-        std::cout << "Daughter 0, PDG: " << pdg0 << ", Pt: " << mcTracksMatrix[evIDvec[0]][daughterIDvec[0]].GetPt() << std::endl;
-        std::cout << "Daughter 0, Rec Pt: " << v0.getProng(0).getPt() << ", Track type: " << v0.getProngID(0).getSourceName() << std::endl;
-
-        std::cout << "Daughter 1, PDG: " << pdg1 << ", Pt: " << mcTracksMatrix[evIDvec[0]][daughterIDvec[1]].GetPt() << std::endl;
-        std::cout << "Daughter 1, Rec Pt: " << v0.getProng(1).getPt() << ", Track type: " << v0.getProngID(1).getSourceName() << std::endl;
-        auto motherTrack = mcTracksMatrix[evIDvec[0]][motherIDvec[0]];
-
-        if (motherTrack.leftTrace(0))
+        for (auto &v0 : *v0vec)
         {
-            histITScounter->Fill(0);
-            std::cout << "ITS sees mother hits! " << std::endl;
-            o2::its::TrackITS* motherITStrack = getITSTrack(evIDvec[0], motherIDvec[0], treeITS, labITSvec, ITStracks);
-            if (motherITStrack != nullptr)
-                motherITStrack->getNFakeClusters()>0 ? histITScounter->Fill(2) : histITScounter->Fill(1);
+            std::vector<int> motherIDvec;
+            std::vector<int> daughterIDvec;
+            std::vector<int> evIDvec;
+            LOG(info) << "******************************";
+
+            for (int iV0 = 0; iV0 < 2; iV0++)
+            {
+
+                if (map[v0.getProngID(iV0).getSourceName()])
+                {
+
+                    auto labTrackType = map[v0.getProngID(iV0).getSourceName()];
+                    auto lab = labTrackType->at(v0.getProngID(iV0).getIndex());
+
+                    int trackID, evID, srcID;
+                    bool fake;
+                    lab.get(trackID, evID, srcID, fake);
+                    if (!lab.isNoise() && lab.isValid() && lab.isCorrect())
+                    {
+                        auto motherID = mcTracksMatrix[evID][trackID].getMotherTrackId();
+                        motherIDvec.push_back(motherID);
+                        daughterIDvec.push_back(trackID);
+                        evIDvec.push_back(evID);
+                        LOG(info) << "Dau PDG: " << mcTracksMatrix[evID][trackID].GetPdgCode() << ", Mother PDG: " << mcTracksMatrix[evID][motherID].GetPdgCode() << ", Eta: " << mcTracksMatrix[evID][motherID].GetEta() << ", Mom: " << mcTracksMatrix[evID][motherID].GetPt();
+                        LOG(info) << "trackID " << trackID << " evID " << evID << " srcID " << srcID << " fake " << fake;
+                    }
+                }
+            }
+
+            if (motherIDvec.size() < 2)
+                continue;
+            if (motherIDvec[0] != motherIDvec[1] || evIDvec[0] != evIDvec[1])
+                continue;
+            if (motherIDvec[0] < 0 || motherIDvec[0] > 10000)
+                continue;
+
+            int pdg0 = mcTracksMatrix[evIDvec[0]][daughterIDvec[0]].GetPdgCode();
+            int pdg1 = mcTracksMatrix[evIDvec[0]][daughterIDvec[1]].GetPdgCode();
+
+            if (pdg0 != firstDaughterPDG && pdg0 != secondDaughterPDG)
+                continue;
+            if (pdg1 != firstDaughterPDG && pdg1 != secondDaughterPDG)
+                continue;
+            std::cout << "---------------------------------" << std::endl;
+
+            histInvMass->Fill(calcMass(v0, dauMass, dauCharges));
+            histV0radius->Fill(TMath::Sqrt(v0.calcR2()));
+            counter++;
+            std::cout << "Counter: " << counter << std::endl;
+            std::cout << evIDvec[0] << ", " << motherIDvec[0] << ", " << motherIDvec[1] << std::endl;
+            std::cout << "Common mother found, PDG: " << mcTracksMatrix[evIDvec[0]][motherIDvec[0]].GetPdgCode() << std::endl;
+            std::cout << "Daughter 0, PDG: " << pdg0 << ", Pt: " << mcTracksMatrix[evIDvec[0]][daughterIDvec[0]].GetPt() << std::endl;
+            std::cout << "Daughter 0, Rec Pt: " << v0.getProng(0).getPt() << ", Track type: " << v0.getProngID(0).getSourceName() << std::endl;
+
+            std::cout << "Daughter 1, PDG: " << pdg1 << ", Pt: " << mcTracksMatrix[evIDvec[0]][daughterIDvec[1]].GetPt() << std::endl;
+            std::cout << "Daughter 1, Rec Pt: " << v0.getProng(1).getPt() << ", Track type: " << v0.getProngID(1).getSourceName() << std::endl;
+            auto motherTrack = mcTracksMatrix[evIDvec[0]][motherIDvec[0]];
+
+            if (motherTrack.leftTrace(0))
+            {
+                histITScounter->Fill(0);
+                std::cout << "ITS sees mother hits! " << std::endl;
+                o2::its::TrackITS *motherITStrack = getITSTrack(evIDvec[0], motherIDvec[0], treeITS, labITSvec, ITStracks);
+                if (motherITStrack != nullptr)
+                {
+                    counterTracks++;
+                    motherITStrack->getNFakeClusters() > 0 ? histITScounter->Fill(2) : histITScounter->Fill(1);
+                }
+            }
         }
     }
-    histITScounter->Scale(1/double(counter));
+    LOG(info) << "number of tracks: " << counterTracks;
+    auto outFile = TFile("v0study.root", "recreate");
+
+    for (int iBin = 1; iBin < histITScounter->GetNbinsX() + 1; iBin++)
+    {
+        histITScounter->SetBinContent(iBin, histITScounter->GetBinContent(iBin) / counter);
+    }
     const char *labHits[3] = {"Has at least 1 ITS hit", "Has ITS track w/o fake", "Has ITS track w/ fake"};
     for (auto iLab{0}; iLab < 3; ++iLab)
     {
@@ -223,16 +296,20 @@ void v0Study()
 
     const char *labels[3] = {std::to_string(motherPDG).data(), std::to_string(firstDaughterPDG).data(), std::to_string(secondDaughterPDG).data()};
     double norm = 1 / double(injectedParticles);
-    for (auto iH{0}; iH < 4; ++iH)
+    for (auto iH{0}; iH < 5; ++iH)
     {
         for (auto iLab{0}; iLab < 3; ++iLab)
         {
             hists[iH]->GetXaxis()->SetBinLabel(iLab + 1, labels[iLab]);
         }
-        hists[iH]->Scale(norm);
+        for (int iBin = 1; iBin < hists[iH]->GetNbinsX() + 1; iBin++)
+        {
+            hists[iH]->SetBinContent(iBin, hists[iH]->GetBinContent(iBin) / injectedParticles);
+        }
         hists[iH]->Write();
     }
     histInvMass->Write();
+    histDecLength->Write();
     histV0radius->Write();
     histITSHits->Write();
     histITScounter->Write();
@@ -261,13 +338,14 @@ o2::its::TrackITS *getITSTrack(int motherEvID, int motherTrackID, TTree *ITStree
             {
                 if (evID == motherEvID and trackID == motherTrackID)
                 {
+                    std::cout << "Matching indexes: " << evID << "   " << motherTrackID << std::endl;
                     motherTrack = &ITStrack->at(iTrack);
                     std::cout << "ITS sees mother track! " << std::endl;
                     return motherTrack;
                 }
             }
         }
-    }    
+    }
     return motherTrack;
 };
 
@@ -283,26 +361,34 @@ void doMatching(const std::vector<std::vector<o2::MCTrack>> &mcTracksMatrix, TTr
         }
         for (unsigned int iTrack{0}; iTrack < labDetectors->size(); ++iTrack)
         {
+
             auto lab = labDetectors->at(iTrack);
             int trackID, evID, srcID;
             bool fake;
             lab.get(trackID, evID, srcID, fake);
-            if (!lab.isNoise() && lab.isValid() && lab.isCorrect())
+            if (!lab.isNoise() && lab.isValid() && lab.isCorrect() && !lab.isFake())
             {
-                int ent = -1;
-                switch (mcTracksMatrix[evID][trackID].GetPdgCode())
+                auto motherID = mcTracksMatrix[evID][trackID].getMotherTrackId();
+                auto dauPDG = mcTracksMatrix[evID][trackID].GetPdgCode();
+                auto momPDG = mcTracksMatrix[evID][motherID].GetPdgCode();
+                if (dauPDG == motherPDG || momPDG == motherPDG)
                 {
-                case secondDaughterPDG:
-                    ent = 2;
-                    break;
-                case firstDaughterPDG:
-                    ent = 1;
-                    break;
-                case motherPDG:
-                    ent = 0;
-                    break;
+
+                    int ent = -1;
+                    switch (dauPDG)
+                    {
+                    case secondDaughterPDG:
+                        ent = 2;
+                        break;
+                    case firstDaughterPDG:
+                        ent = 1;
+                        break;
+                    case motherPDG:
+                        ent = 0;
+                        break;
+                    }
+                    histo->Fill(ent);
                 }
-                histo->Fill(ent);
             }
         }
     }
@@ -334,8 +420,11 @@ double calcDecLength(std::vector<MCTrack> *MCTracks, const MCTrack &motherTrack,
         auto dauTrack = MCTracks->at(iD);
         if (dauTrack.GetPdgCode() == dauPDG)
         {
-            auto decLength = TMath::Sqrt((dauTrack.GetStartVertexCoordinatesX() - motherTrack.GetStartVertexCoordinatesX()) * (dauTrack.GetStartVertexCoordinatesX() - motherTrack.GetStartVertexCoordinatesX()) + (dauTrack.GetStartVertexCoordinatesY() - motherTrack.GetStartVertexCoordinatesY()) * (dauTrack.GetStartVertexCoordinatesY() - motherTrack.GetStartVertexCoordinatesY()) + (dauTrack.GetStartVertexCoordinatesZ() - motherTrack.GetStartVertexCoordinatesZ()) * (dauTrack.GetStartVertexCoordinatesZ() - motherTrack.GetStartVertexCoordinatesZ()));
-            return decLength;
+            auto decLength = (dauTrack.GetStartVertexCoordinatesX() - motherTrack.GetStartVertexCoordinatesX()) *
+                                 (dauTrack.GetStartVertexCoordinatesX() - motherTrack.GetStartVertexCoordinatesX()) +
+                             (dauTrack.GetStartVertexCoordinatesY() - motherTrack.GetStartVertexCoordinatesY()) *
+                                 (dauTrack.GetStartVertexCoordinatesY() - motherTrack.GetStartVertexCoordinatesY());
+            return sqrt(decLength);
         }
     }
     return -1;
