@@ -32,6 +32,10 @@ const int motherPDG = 1010010030;
 const int firstDaughterPDG = 1000020030;
 const int secondDaughterPDG = 211;
 
+// const int motherPDG = 3122;
+// const int firstDaughterPDG = 2212;
+// const int secondDaughterPDG = -211;
+
 // const int motherPDG = 310;
 // const int firstDaughterPDG = 211;
 // const int secondDaughterPDG = -211;
@@ -46,12 +50,30 @@ double calcMass(const V0 &v0, double dauMass[2], int dauCharges[2]);
 
 void v0Study()
 {
-    double bins[2] = {0, 0};
+    double bins[2] = {2.96, 3.04};
+    double motherMass = 2.99131;
+    double dauMass[2] = {2.80839160743, 0.13957};
+    int dauCharges[2] = {2, 1};
 
-    if (std::abs(motherPDG) == 1010010030)
+    if (std::abs(motherPDG) == 3122)
     {
-        bins[0] = 2.96;
-        bins[1] = 3.04;
+        motherMass = 1.115683;
+        bins[0] = 1.0;
+        bins[1] = 1.2;
+        dauMass[0] = 0.938272;
+        dauMass[1] = 0.13957;
+        dauCharges[0] = 1;
+        dauCharges[1] = 1;
+    }
+    if (motherPDG == 310)
+    {
+        motherMass = 0.493677;
+        bins[0] = 0.4;
+        bins[1] = 0.6;
+        dauMass[0] = 0.13957;
+        dauMass[1] = 0.13957;
+        dauCharges[0] = 1;
+        dauCharges[1] = 1;
     }
 
     int injectedParticles = 0;
@@ -177,7 +199,7 @@ void v0Study()
                     histGeneratedV0s->Fill(0.5);
                     double L = calcDecLength(MCtracks, mcTrack, firstDaughterPDG);
                     histGenDecLength->Fill(L);
-                    histGenLifetime->Fill(L * 2.99131 / mcTrack.GetP());
+                    histGenLifetime->Fill(L * motherMass / mcTrack.GetP());
                     histGenRadius->Fill(calcRadius(MCtracks, mcTrack, firstDaughterPDG));
                 }
             }
@@ -237,10 +259,6 @@ void v0Study()
             if (!(std::abs(pdg0) == firstDaughterPDG && std::abs(pdg1) == secondDaughterPDG) && !(std::abs(pdg0) == secondDaughterPDG && std::abs(pdg1) == firstDaughterPDG))
                 continue;
 
-            v0.setPID(o2::track::PID::HyperTriton);
-
-            double dauMass[2] = {2.80839160743, 0.13957};
-            int dauCharges[2] = {2, 1};
             if (calcV0alpha(v0) < 0)
             {
                 std::swap(dauMass[0], dauMass[1]);
