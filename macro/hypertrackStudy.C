@@ -42,26 +42,16 @@ using Vec3 = ROOT::Math::SVector<double, 3>;
 
 const int motherPDG = 1010010030;
 const int firstDaughterPDG = 1000020030;
-const int secondDaughterPDG = -211;
+const int secondDaughterPDG = 211;
 
 double calcDecLength(std::vector<MCTrack> *MCTracks, const MCTrack &motherTrack, int dauPDG);
 double calcV0alpha(const V0 &v0);
 double recomputeV0Pt(const V0 &v0);
 std::vector<std::array<int, 2>> matchV0stoMC(const std::vector<std::vector<o2::MCTrack>> &mcTracksMatrix, std::map<std::string, std::vector<o2::MCCompLabel> *> &map, std::vector<V0> *v0vec);
+std::array<int, 2> matchV0DautoMC(const std::vector<std::vector<o2::MCTrack>> &mcTracksMatrix, std::map<std::string, std::vector<o2::MCCompLabel> *> &map, o2::dataformats::V0::GIndex dauID);
 std::array<int, 2> matchITStracktoMC(const std::vector<std::vector<o2::MCTrack>> &mcTracksMatrix, o2::MCCompLabel ITSlabel);
-std::array<int, 2> matchITSclustoMC(const std::vector<std::vector<o2::MCTrack>> &mcTracksMatrix, o2::MCCompLabel ITSlabel);
+std::array<int, 2> matchCompLabelToMC(const std::vector<std::vector<o2::MCTrack>> &mcTracksMatrix, o2::MCCompLabel ITSlabel);
 std::vector<ITSCluster> getTrackClusters(const o2::its::TrackITS &ITStrack, const std::vector<ITSCluster> &ITSClustersArray, std::vector<int> *ITSTrackClusIdx);
-std::string get_str_between_two_str(const std::string &s,
-                                    const std::string &start_delim,
-                                    const std::string &stop_delim)
-{
-    unsigned first_delim_pos = s.find(start_delim);
-    unsigned end_pos_of_first_delim = first_delim_pos + start_delim.length();
-    unsigned last_delim_pos = s.find(stop_delim);
-
-    return s.substr(end_pos_of_first_delim,
-                    last_delim_pos - end_pos_of_first_delim);
-}
 
 void hypertrackStudy()
 {
@@ -79,12 +69,12 @@ void hypertrackStudy()
     TH1D *hResHyperhistoR2 = new TH1D("R2 resolution after hypertracking", ";(R2^{gen} - R2^{rec})/R2^{gen}; Counts", 20, -0.2, 0.2);
     TH1D *hV0Counter = new TH1D("V0 counter", ";V0 counter; Counts", 1, 0.5, 1.5);
 
-    TH1D *hRecHypCounter = new TH1D("Rec V0 hyp counter", ";Rec V0 hyp counter; Counts", 1, 0.5, 1.5);
-    TH1D *hV0wTrackCounter = new TH1D("V0 with track counter", ";V0 with track counter; Counts", 1, 0.5, 1.5);
+    TH1D *hRecHypCounter = new TH1D("Rec V0 hyp counter", "; ; Counts", 1, 0.5, 1.5);
+    TH1D *hHypertrackerStats = new TH1D("hypertracker_stats", "; ; Counts", 3, 0.5, 3.5);
     TH1D *hHyperCounter = new TH1D("Hypertrack counter", ";Hypertrack counter; Counts", 1, 0.5, 1.5);
     TH1D *hFakeAssocCounter = new TH1D("Fake assoc counter", ";Fake assoc counter; Counts", 1, 0.5, 1.5);
 
-    std::string path = "/home/fmazzasc/alice/run_sim/";
+    std::string path = "/data/fmazzasc/its_data/sim/hyp/";
     TSystemDirectory dir("MyDir", path.data());
     auto files = dir.GetListOfFiles();
     std::vector<std::string> dirs;
@@ -93,9 +83,9 @@ void hypertrackStudy()
     for (auto fileObj : *files)
     {
         std::string file = ((TSystemFile *)fileObj)->GetName();
-        if (file.substr(0, 2) == "tf")
+        if (file.substr(0, 4) == "tf16")
         {
-            dirs.push_back(file);
+            dirs.push_back(path + file);
             auto innerdir = (TSystemDirectory *)fileObj;
             auto innerfiles = innerdir->GetListOfFiles();
             for (auto innerfileObj : *innerfiles)
@@ -114,6 +104,7 @@ void hypertrackStudy()
         auto &dir = dirs[i];
         auto &kine_file = kine_files[i];
         LOG(info) << "Processing " << dir;
+        LOG(info) << "kine file " << kine_file;
         // Files
         auto fMCTracks = TFile::Open((TString(dir + "/") + kine_file));
         auto fHyperTracks = TFile::Open((dir + "/o2_hypertrack.root").data());
@@ -126,7 +117,7 @@ void hypertrackStudy()
         auto fTPC = TFile::Open((dir + "/tpctracks.root").data());
 
         // Geometry
-        o2::base::GeometryManager::loadGeometry(dir + "/o2sim_geometry-aligned.root");
+        o2::base::GeometryManager::loadGeometry(dir + "/o2sim_geometry.root");
 
         // Trees
         auto treeMCTracks = (TTree *)fMCTracks->Get("o2sim");
@@ -139,10 +130,6 @@ void hypertrackStudy()
         auto treeITSclus = (TTree *)fClusITS->Get("o2sim");
         auto treeTPC = (TTree *)fTPC->Get("tpcrec");
 
-        // Topology dictionary
-        o2::itsmft::TopologyDictionary mdict;
-        mdict.readFromFile(o2::base::DetectorNameConf::getAlpideClusterDictionaryFileName(o2::detectors::DetID::ITS));
-
         // MC Tracks
         std::vector<o2::MCTrack> *MCtracks = nullptr;
         std::vector<o2::itsmft::Hit> *ITSHits = nullptr;
@@ -151,7 +138,7 @@ void hypertrackStudy()
         std::vector<int> *hyperITSvec = nullptr;
         std::vector<o2::track::TrackParametrizationWithError<float>> *hypertrackVec = nullptr;
         std::vector<float> *hyperChi2vec = nullptr;
-        std::vector<o2::strangeness_tracking::He3Attachments> *nUpdates = nullptr;
+        std::vector<o2::strangeness_tracking::ClusAttachments> *nAttachments = nullptr;
 
         // Secondary Vertices
         std::vector<V0> *v0vec = nullptr;
@@ -176,7 +163,7 @@ void hypertrackStudy()
         treeHypertracks->SetBranchAddress("ITSTrackRefs", &hyperITSvec);
         treeHypertracks->SetBranchAddress("Hypertracks", &hypertrackVec);
         treeHypertracks->SetBranchAddress("ITSV0Chi2", &hyperChi2vec);
-        treeHypertracks->SetBranchAddress("He3Updates", &nUpdates);
+        treeHypertracks->SetBranchAddress("ClusUpdates", &nAttachments);
 
         treeSecondaries->SetBranchAddress("V0s", &v0vec);
         treeMCTracks->SetBranchAddress("MCTrack", &MCtracks);
@@ -210,7 +197,7 @@ void hypertrackStudy()
             for (unsigned int mcI{0}; mcI < MCtracks->size(); ++mcI)
             {
                 mcTracksMatrix[n][mcI] = MCtracks->at(mcI);
-                if (MCtracks->at(mcI).GetPdgCode() == motherPDG)
+                if (abs(MCtracks->at(mcI).GetPdgCode()) == motherPDG)
                 {
                     auto &mcTrack = mcTracksMatrix[n][mcI];
                     hMChisto->Fill(mcTrack.GetPt(), calcDecLength(MCtracks, mcTrack, firstDaughterPDG));
@@ -227,6 +214,11 @@ void hypertrackStudy()
                 continue;
 
             std::vector<std::array<int, 2>> V0sMCref = matchV0stoMC(mcTracksMatrix, map, v0vec);
+
+            std::vector<bool> matchedHypertrackVec;
+            matchedHypertrackVec.resize(hyperV0vec->size());
+            for (auto &&isMatched : matchedHypertrackVec)
+                isMatched = false;
 
             for (unsigned int iV0vec = 0; iV0vec < v0vec->size(); iV0vec++)
             {
@@ -246,6 +238,8 @@ void hypertrackStudy()
                 std::array<std::array<int, 2>, 7> clsRef;
 
                 int iTrack = -1;
+                bool isMatched = false;
+
                 for (unsigned int iITStrack = 0; iITStrack < ITStracks->size(); iITStrack++)
                 {
                     auto &labITS = (*labITSvec)[iITStrack];
@@ -263,39 +257,57 @@ void hypertrackStudy()
                             auto &labCls = (clusLabArr->getLabels(ITSTrackClusIdx->at(firstClus + icl)))[0];
                             auto &clus = (*ITSclus)[(*ITSTrackClusIdx)[firstClus + icl]];
                             auto layer = gman->getLayer(clus.getSensorID());
-                            clsRef[layer] = matchITSclustoMC(mcTracksMatrix, labCls);
+                            clsRef[layer] = matchCompLabelToMC(mcTracksMatrix, labCls);
                         }
-                        hV0wTrackCounter->Fill(1);
+                        hHypertrackerStats->Fill(1);
+                        isMatched = true;
                         iTrack = iITStrack;
                         break;
                     }
                 }
 
-                bool isMatched = true;
-                if (!(ITSref[0] == V0sMCref[iV0vec][0]) || !(ITSref[1] == V0sMCref[iV0vec][1]))
-                    isMatched = false;
+                if (!isMatched)
+                    continue;
 
                 // Matching hypertracks to MC tracks, V0s and ITS tracks
-                int iHypertrack = -1;
+                bool isHypertracked = false;
                 for (unsigned int iHyperVec = 0; iHyperVec < hyperV0vec->size(); iHyperVec++)
                 {
-                    auto &hyperV0 = (*hyperV0vec)[iHyperVec];
-                    if (hyperV0.getProngID(0) == v0.getProngID(0) || hyperV0.getProngID(1) == v0.getProngID(1))
+                    auto &hyperV0 = hyperV0vec->at(iHyperVec);
+                    auto &hyperTrack = hypertrackVec->at(iHyperVec);
+                    auto &hyperChi2 = hyperChi2vec->at(iHyperVec);
+                    auto &hyperITSref = hyperITSvec->at(iHyperVec);
+                    if (hyperV0.getProngID(0) == v0.getProngID(0) && hyperV0.getProngID(1) == v0.getProngID(1) && hyperITSref == iTrack)
                     {
-                        iHypertrack = iHyperVec;
+                        LOG(info) << "++++++++++++++++++++++++";
+                        LOG(info) << "Hypertrack found!: ITS track ref: " << hyperITSref;
+                        isHypertracked = true;
+                        matchedHypertrackVec[iHyperVec] = true;
+                        hHyperCounter->Fill(1);
+                        hHypertrackerStats->Fill(2);
+                        hHyperhisto->Fill(hyperTrack.getPt(), hyperV0.calcR2());
+                        hResHyperhisto->Fill((hyperTrack.getPt() - mcTrack.GetPt()) / mcTrack.GetPt());
+                        hResV0histo->Fill((recomputeV0Pt(v0) - mcTrack.GetPt()) / mcTrack.GetPt());
+                        hResV0histoR2->Fill((v0.calcR2() - calcDecLength(&mcTracksMatrix[v0MCref[0]], mcTrack, firstDaughterPDG)) / calcDecLength(&mcTracksMatrix[v0MCref[0]], mcTrack, firstDaughterPDG));
+                        hResHyperhistoR2->Fill((hyperV0.calcR2() - calcDecLength(&mcTracksMatrix[v0MCref[0]], mcTrack, firstDaughterPDG)) / calcDecLength(&mcTracksMatrix[v0MCref[0]], mcTrack, firstDaughterPDG));
+                        hChi2Sgn->Fill(hyperChi2);
                         break;
                     }
                 }
 
-                if (iHypertrack == -1 && isMatched)
+                if (!isHypertracked)
                 {
                     LOG(info) << "------------------";
                     LOG(info) << "No hypertrack found, but ITS track found";
                     LOG(info) << "processing frame " << frame << ", dir: " << dir;
-                    LOG(info) << "V0 pos: " << v0.getProngID(0) << " V0 neg: " << v0.getProngID(1) << " ITS: " << iTrack;
+                    LOG(info) << "V0 pos: " << v0.getProngID(0) << " V0 neg: " << v0.getProngID(1) << " V0pt: " << v0.getPt() << " ITSpt: " << ITStrack.getPt();
+                    LOG(info) << "V0 Eta: " << v0.getEta() << " V0 phi" << v0.getPhi() << " ITS eta: " << ITStrack.getEta() << " ITS phi: " << ITStrack.getPhi();
+
                     LOG(info) << "Number of hits: " << ITStrack.getNClusters();
                     LOG(info) << "ITS Track ref: " << ITSref[0] << " " << ITSref[1] << " , PDG: " << mcTracksMatrix[ITSref[0]][ITSref[1]].GetPdgCode();
                     LOG(info) << "+++++++";
+                    hHypertrackerStats->Fill(3);
+
                     for (unsigned int i{0}; i < 7; i++)
                     {
                         if (ITStrack.hasHitOnLayer(i))
@@ -318,55 +330,69 @@ void hypertrackStudy()
                         }
                     }
                 }
+            }
 
-                if (iHypertrack == -1)
-                {
-                    continue;
-                }
+            LOG(info) << " Start studying fake associations";
+            for (unsigned int iHyperVec = 0; iHyperVec < hyperV0vec->size(); iHyperVec++)
+            {
 
-                auto &hyperTrack = (*hypertrackVec)[iHypertrack];
-                auto &hyperV0 = (*hyperV0vec)[iHypertrack];
-                auto &hyperChi2 = (*hyperChi2vec)[iHypertrack];
+                auto &hyperChi2 = hyperChi2vec->at(iHyperVec);
+                auto &clusAttachments = nAttachments->at(iHyperVec);
+                auto &ITStrack = ITStracks->at(hyperITSvec->at(iHyperVec));
+                auto &ITStrackLab = labITSvec->at(hyperITSvec->at(iHyperVec));
 
-                std::array<unsigned int, 7> &isUpdated = (*nUpdates)[iHypertrack].arr;
-                if (isMatched)
+                auto clusAttArr = clusAttachments.arr;
+                auto isMatched = matchedHypertrackVec[iHyperVec];
+                auto &hyperV0 = hyperV0vec->at(iHyperVec);
+
+                if (!isMatched)
                 {
-                    hHyperCounter->Fill(1);
-                    hHyperhisto->Fill(hyperTrack.getPt(), hyperV0.calcR2());
-                    hResHyperhisto->Fill((hyperTrack.getPt() - mcTrack.GetPt()) / mcTrack.GetPt());
-                    hResV0histo->Fill((recomputeV0Pt(v0) - mcTrack.GetPt()) / mcTrack.GetPt());
-                    hResV0histoR2->Fill((v0.calcR2() - calcDecLength(&mcTracksMatrix[v0MCref[0]], mcTrack, firstDaughterPDG)) / calcDecLength(&mcTracksMatrix[v0MCref[0]], mcTrack, firstDaughterPDG));
-                    hResHyperhistoR2->Fill((hyperV0.calcR2() - calcDecLength(&mcTracksMatrix[v0MCref[0]], mcTrack, firstDaughterPDG)) / calcDecLength(&mcTracksMatrix[v0MCref[0]], mcTrack, firstDaughterPDG));
-                    hChi2Sgn->Fill(hyperChi2);
-                }
-                else
-                {
+                    LOG(info) << "**************";
+                    LOG(info) << "V0 pos: " << hyperV0.getProngID(0) << " V0 neg: " << hyperV0.getProngID(1) << " V0pt: " << hyperV0.getPt() << " ITSpt: " << ITStrack.getPt();
+                    auto v0PosRef = matchV0DautoMC(mcTracksMatrix, map, hyperV0.getProngID(0));
+                    auto v0NegRef = matchV0DautoMC(mcTracksMatrix, map, hyperV0.getProngID(1));
+                    auto ITStrackRef = matchCompLabelToMC(mcTracksMatrix, ITStrackLab);
+                    LOG(info) << "V0 pos lab: " << v0PosRef[0] << " " << v0PosRef[1] << ", V0 neg lab: " << v0NegRef[0] << " " << v0NegRef[1] << ", ITS ref: " << ITStrackRef[0] << " " << ITStrackRef[1];  
+
+
                     hChi2Bkg->Fill(hyperChi2);
                     hFakeAssocCounter->Fill(1);
+                    auto firstClus = ITStrack.getFirstClusterEntry();
+                    auto ncl = ITStrack.getNumberOfClusters();
+                    for (int icl = 0; icl < ncl; icl++)
+                    {
+                        auto &labCls = (clusLabArr->getLabels(ITSTrackClusIdx->at(firstClus + icl)))[0];
+                        auto &clus = (*ITSclus)[(*ITSTrackClusIdx)[firstClus + icl]];
+                        auto layer = gman->getLayer(clus.getSensorID());
+                        std::array<int, 2> clsRef = matchCompLabelToMC(mcTracksMatrix, labCls);
+                        if (clsRef[0] > -1 && clsRef[1] > -1)
+                            LOG(info) << "Layer: " << layer << "PDG: " << mcTracksMatrix[clsRef[0]][clsRef[1]].GetPdgCode() << ", Attached to: " << clusAttArr[layer];
+                        else
+                            LOG(info) << "Layer: " << layer << ", No valid cluster ref";
+                    }
                 }
             }
         }
+        auto outFile = TFile("hypertrack_study.root", "recreate");
+        hChi2Sgn->Write();
+        hChi2Bkg->Write();
+
+        hV0histo->Write();
+        hResV0histo->Write();
+        hResV0histoR2->Write();
+        hHyperhisto->Write();
+        hResHyperhisto->Write();
+        hResHyperhistoR2->Write();
+        hMChisto->Write();
+
+        hV0Counter->Write();
+        hHypertrackerStats->Write();
+        hHyperCounter->Write();
+        hFakeAssocCounter->Write();
+        hRecHypCounter->Write();
+        outFile.Close();
     }
-    auto outFile = TFile("hypertrack_study.root", "recreate");
-    hChi2Sgn->Write();
-    hChi2Bkg->Write();
-
-    hV0histo->Write();
-    hResV0histo->Write();
-    hResV0histoR2->Write();
-    hHyperhisto->Write();
-    hResHyperhisto->Write();
-    hResHyperhistoR2->Write();
-    hMChisto->Write();
-
-    hV0Counter->Write();
-    hV0wTrackCounter->Write();
-    hHyperCounter->Write();
-    hFakeAssocCounter->Write();
-    hRecHypCounter->Write();
-    outFile.Close();
 }
-
 std::vector<std::array<int, 2>> matchV0stoMC(const std::vector<std::vector<o2::MCTrack>> &mcTracksMatrix, std::map<std::string, std::vector<o2::MCCompLabel> *> &map, std::vector<V0> *v0vec)
 {
     std::vector<std::array<int, 2>> outArray;
@@ -391,7 +417,7 @@ std::vector<std::array<int, 2>> matchV0stoMC(const std::vector<std::vector<o2::M
                 int trackID, evID, srcID;
                 bool fake;
                 lab.get(trackID, evID, srcID, fake);
-                if (!lab.isNoise() && lab.isValid() && lab.isCorrect() && srcID)
+                if (lab.isValid())
                 {
                     auto motherID = mcTracksMatrix[evID][trackID].getMotherTrackId();
                     motherIDvec.push_back(motherID);
@@ -412,9 +438,7 @@ std::vector<std::array<int, 2>> matchV0stoMC(const std::vector<std::vector<o2::M
         int pdg0 = mcTracksMatrix[evIDvec[0]][daughterIDvec[0]].GetPdgCode();
         int pdg1 = mcTracksMatrix[evIDvec[0]][daughterIDvec[1]].GetPdgCode();
 
-        if (pdg0 != firstDaughterPDG && pdg0 != secondDaughterPDG)
-            continue;
-        if (pdg1 != firstDaughterPDG && pdg1 != secondDaughterPDG)
+        if (!(std::abs(pdg0) == firstDaughterPDG && std::abs(pdg1) == secondDaughterPDG) && !(std::abs(pdg0) == secondDaughterPDG && std::abs(pdg1) == firstDaughterPDG))
             continue;
 
         // std::cout << "Mother PDG: " << mcTracksMatrix[evIDvec[0]][motherIDvec[0]].GetPt() << std::endl;
@@ -432,7 +456,7 @@ std::array<int, 2> matchITStracktoMC(const std::vector<std::vector<o2::MCTrack>>
     int trackID, evID, srcID;
     bool fake;
     ITSlabel.get(trackID, evID, srcID, fake);
-    if (!ITSlabel.isNoise() && ITSlabel.isValid() && srcID && mcTracksMatrix[evID][trackID].GetPdgCode() == motherPDG)
+    if (!ITSlabel.isNoise() && ITSlabel.isValid() && std::abs(mcTracksMatrix[evID][trackID].GetPdgCode()) == motherPDG)
     {
         outArray = {evID, trackID};
     }
@@ -440,17 +464,39 @@ std::array<int, 2> matchITStracktoMC(const std::vector<std::vector<o2::MCTrack>>
     return outArray;
 }
 
-std::array<int, 2> matchITSclustoMC(const std::vector<std::vector<o2::MCTrack>> &mcTracksMatrix, o2::MCCompLabel ITSlabel)
+std::array<int, 2> matchCompLabelToMC(const std::vector<std::vector<o2::MCTrack>> &mcTracksMatrix, o2::MCCompLabel compLabel)
 {
-    std::array<int, 2> clusRef = {-1, -1};
+    std::array<int, 2> compRef = {-1, -1};
     int trackID, evID, srcID;
     bool fake;
-    ITSlabel.get(trackID, evID, srcID, fake);
-    if (ITSlabel.isValid() && srcID)
+    compLabel.get(trackID, evID, srcID, fake);
+    if (compLabel.isValid())
     {
-        clusRef = {evID, trackID};
+        compRef = {evID, trackID};
     }
-    return clusRef;
+    return compRef;
+}
+
+std::array<int, 2> matchV0DautoMC(const std::vector<std::vector<o2::MCTrack>> &mcTracksMatrix, std::map<std::string, std::vector<o2::MCCompLabel> *> &map, o2::dataformats::V0::GIndex dauID)
+{
+    std::array<int, 2> outArray{-1, -1};
+
+    if (map[dauID.getSourceName()])
+    {
+        auto labTrackType = map[dauID.getSourceName()];
+        auto lab = labTrackType->at(dauID.getIndex());
+
+        int trackID, evID, srcID;
+        bool fake;
+        lab.get(trackID, evID, srcID, fake);
+        if (lab.isValid())
+        {
+            auto motherID = mcTracksMatrix[evID][trackID].getMotherTrackId();
+            outArray = {evID, motherID};
+        }
+    }
+
+    return outArray;
 }
 
 std::vector<ITSCluster> getTrackClusters(const o2::its::TrackITS &ITStrack, const std::vector<ITSCluster> &ITSClustersArray, std::vector<int> *ITSTrackClusIdx)
@@ -473,7 +519,7 @@ double calcDecLength(std::vector<MCTrack> *MCTracks, const MCTrack &motherTrack,
     for (auto iD{idStart}; iD < idStop; ++iD)
     {
         auto dauTrack = MCTracks->at(iD);
-        if (dauTrack.GetPdgCode() == dauPDG)
+        if (std::abs(dauTrack.GetPdgCode()) == dauPDG)
         {
             auto decLength = (dauTrack.GetStartVertexCoordinatesX() - motherTrack.GetStartVertexCoordinatesX()) *
                                  (dauTrack.GetStartVertexCoordinatesX() - motherTrack.GetStartVertexCoordinatesX()) +
